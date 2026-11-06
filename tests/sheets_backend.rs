@@ -546,6 +546,7 @@ fn a_transport_failure_is_reported_without_a_status() {
 
 #[test]
 fn the_router_sends_calls_to_the_sheets_backend_in_gsheet_mode() {
+    let dir = tempfile::TempDir::new().expect("temp dir");
     let server = server_with(vec![(
         "getMember",
         CannedResponse::json(
@@ -555,12 +556,8 @@ fn the_router_sends_calls_to_the_sheets_backend_in_gsheet_mode() {
         ),
     )]);
 
-    let db = Database::with_sqlite_path(
-        DbMode::Gsheet,
-        &server.url,
-        std::path::Path::new("unused.db"),
-    )
-    .expect("router");
+    let db = Database::with_sqlite_path(DbMode::Gsheet, &server.url, &dir.path().join("Ev_Ap.db"))
+        .expect("router");
     assert_eq!(db.mode(), DbMode::Gsheet);
 
     let member = db.member_exists("rfid-2").expect("lookup").expect("found");

@@ -4,8 +4,8 @@
 Cargo.lock.orig
 
 # Local database + config produced at runtime
-Ev_Ap.db
-Ev_Ap.db-journal
+*.db
+*.db-journal
 ev_ap_config.json
 
 # Editors / OS
