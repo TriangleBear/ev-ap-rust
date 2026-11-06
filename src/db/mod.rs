@@ -8,9 +8,15 @@
 //! The façade deliberately mirrors the Python method names and return
 //! semantics so the port can be checked line by line.
 
+pub mod sheets;
 pub mod sqlite;
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+
+use crate::config::DbMode;
+
+use self::sheets::SheetBackend;
+use self::sqlite::SqliteBackend;
 
 /// A member record, as returned by `member_exists`.
 ///
@@ -174,6 +180,194 @@ pub trait Backend {
 /// The Python app keeps a single global `DBActions` instance; this is the Rust
 /// equivalent and is cheap to clone.
 pub type SharedBackend = Arc<dyn Backend + Send + Sync>;
+
+/// The router that dispatches every call to the active backend.
+///
+/// This is the Rust counterpart of the Python `Database` class in
+/// `App/database/dblite.py`, which holds both backends and routes each call
+/// according to `db_mode`.
+pub struct Database {
+    mode: RwLock<DbMode>,
+    sqlite: SqliteBackend,
+    sheets: SheetBackend,
+}
+
+impl Database {
+    /// Create the router with an already selected backend.
+    pub fn new(mode: DbMode, gsheet_api_url: &str) -> Result<Self, DbError> {
+        Ok(Database {
+            mode: RwLock::new(mode),
+            sqlite: SqliteBackend::new()?,
+            sheets: SheetBackend::new(gsheet_api_url)?,
+        })
+    }
+
+    /// Create the router with an explicit SQLite database path.
+    ///
+    /// Used by the tests and by the parity tooling.
+    pub fn with_sqlite_path(
+        mode: DbMode,
+        gsheet_api_url: &str,
+        sqlite_path: &std::path::Path,
+    ) -> Result<Self, DbError> {
+        Ok(Database {
+            mode: RwLock::new(mode),
+            sqlite: SqliteBackend::with_path(sqlite_path)?,
+            sheets: SheetBackend::new(gsheet_api_url)?,
+        })
+    }
+
+    /// The active backend.
+    pub fn mode(&self) -> DbMode {
+        self.mode.read().map(|mode| *mode).unwrap_or_default()
+    }
+
+    /// Switch the active backend, mirroring Python's `Database.switch_mode`.
+    pub fn switch_mode(&self, mode: DbMode) {
+        if let Ok(mut current) = self.mode.write() {
+            *current = mode;
+        }
+    }
+
+    /// Point the Sheets backend at a deployment URL.
+    pub fn set_api_url(&self, url: &str) {
+        self.sheets.set_api_url(url);
+    }
+
+    /// The Sheets backend, for the settings flows (test connection, set
+    /// spreadsheet, event details).
+    pub fn sheets(&self) -> &SheetBackend {
+        &self.sheets
+    }
+
+    /// The SQLite backend, for direct access.
+    pub fn sqlite(&self) -> &SqliteBackend {
+        &self.sqlite
+    }
+
+    /// Prepare the active backend — mirrors Python's `Database.initialize_db`.
+    pub fn initialize_db(&self) -> Result<(), DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.initialize_db(),
+            DbMode::Gsheet => Ok(()),
+        }
+    }
+
+    /// Is the active backend usable?
+    pub fn db_exists(&self) -> bool {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.db_exists(),
+            DbMode::Gsheet => self.sheets.db_exists(),
+        }
+    }
+}
+
+impl Backend for Database {
+    fn member_register(
+        &self,
+        rfid: &str,
+        memberid: &str,
+        name: &str,
+        student_num: &str,
+        program: &str,
+        year: &str,
+    ) -> Result<(), DbError> {
+        match self.mode() {
+            DbMode::Sqlite => {
+                self.sqlite
+                    .member_register(rfid, memberid, name, student_num, program, year)
+            }
+            DbMode::Gsheet => {
+                self.sheets
+                    .member_register(rfid, memberid, name, student_num, program, year)
+            }
+        }
+    }
+
+    fn member_exists(&self, rfid: &str) -> Result<Option<Member>, DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.member_exists(rfid),
+            DbMode::Gsheet => self.sheets.member_exists(rfid),
+        }
+    }
+
+    fn list_tables(&self) -> Result<Vec<String>, DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.list_tables(),
+            DbMode::Gsheet => self.sheets.list_tables(),
+        }
+    }
+
+    fn create_event_table(&self, table_name: &str) -> Result<(), DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.create_event_table(table_name),
+            DbMode::Gsheet => self.sheets.create_event_table(table_name),
+        }
+    }
+
+    fn fetch_table_data(&self, table_name: &str) -> Result<Vec<Row>, DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.fetch_table_data(table_name),
+            DbMode::Gsheet => self.sheets.fetch_table_data(table_name),
+        }
+    }
+
+    fn attendance_member_event(&self, table_name: &str, rfid: &str) -> Result<(), DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.attendance_member_event(table_name, rfid),
+            DbMode::Gsheet => self.sheets.attendance_member_event(table_name, rfid),
+        }
+    }
+
+    fn scan_attendance(&self, table_name: &str, rfid: &str) -> Result<ScanOutcome, DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.scan_attendance(table_name, rfid),
+            DbMode::Gsheet => self.sheets.scan_attendance(table_name, rfid),
+        }
+    }
+
+    fn get_member_name(&self, rfid: &str) -> Result<Option<String>, DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.get_member_name(rfid),
+            DbMode::Gsheet => self.sheets.get_member_name(rfid),
+        }
+    }
+
+    fn member_attended_event(&self, table_name: &str, rfid: &str) -> Result<bool, DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.member_attended_event(table_name, rfid),
+            DbMode::Gsheet => self.sheets.member_attended_event(table_name, rfid),
+        }
+    }
+
+    fn add_points(&self, rfid: &str, points: f64) -> Result<(), DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.add_points(rfid, points),
+            DbMode::Gsheet => self.sheets.add_points(rfid, points),
+        }
+    }
+
+    fn get_member_points(&self, rfid: &str) -> Result<f64, DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.get_member_points(rfid),
+            DbMode::Gsheet => self.sheets.get_member_points(rfid),
+        }
+    }
+
+    fn redeem_points(&self, rfid: &str, points: f64) -> Result<(), DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.redeem_points(rfid, points),
+            DbMode::Gsheet => self.sheets.redeem_points(rfid, points),
+        }
+    }
+
+    fn delete_event_table(&self, table_name: &str) -> Result<(), DbError> {
+        match self.mode() {
+            DbMode::Sqlite => self.sqlite.delete_event_table(table_name),
+            DbMode::Gsheet => self.sheets.delete_event_table(table_name),
+        }
+    }
+}
 
 /// Turn an event name into a safe SQL identifier.
 ///
