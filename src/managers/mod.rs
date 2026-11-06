@@ -2,3 +2,5 @@
 //! event table / RFID scan flow.
 //!
 //! Populated in Phase 3 (managers).
+
+pub mod rfid_cache;
