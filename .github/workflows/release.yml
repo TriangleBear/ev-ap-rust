@@ -1,0 +1,138 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: cargo test --all-features --locked -- --nocapture
+
+      - name: Create issue on test failure
+        if: steps.tests.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Build aborted — tests failed on main (${context.sha.substring(0, 7)})`;
+            const body = [
+              '## Test Failure Report',
+              '',
+              'Tests failed after merge to `main`.',
+              '',
+              `**Commit:** \`${context.sha}\``,
+              `**Date:** ${new Date().toISOString()}`,
+              '',
+              '<details><summary>Test output</summary>',
+              '',
+              '```',
+              context.payload.test_output || '(no output captured)',
+              '```',
+              '',
+              '</details>',
+              '',
+              `_Triggered by commit ${context.sha}_`
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body
+            });
+
+      - name: Fail if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+
+      - name: Determine version & release notes
+        id: version
+        shell: pwsh
+        run: |
+          # The version is derived from the branch the merge came from, with the
+          # same rules as the Python app:
+          #   major/*        -> major
+          #   feature|feat/* -> minor
+          #   anything else  -> patch
+          $mergeMsg = git log -1 --format='%s'
+          $raw = cargo run --quiet --example version -- "$mergeMsg"
+          if (-not $?) { exit 1 }
+          if ($raw -is [array]) { $output = $raw -join "`n" } else { $output = "$raw" }
+          $lines = $output -split "`n"
+          $version = $lines[0].Trim()
+
+          $prev = git describe --tags --abbrev=0 HEAD~1 2>$null
+          if ($prev) {
+            $notes = git log "$prev..HEAD" --pretty=format:'- %s (%h)' --no-merges
+            if (-not $notes) { $notes = 'No changes since last tag.' }
+          } else {
+            $notes = 'Initial release.'
+          }
+
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "RELEASE_NOTES<<EOF" >> $env:GITHUB_ENV
+          echo "$notes" >> $env:GITHUB_ENV
+          echo "EOF" >> $env:GITHUB_ENV
+          Write-Output "New version: $version (from $branch)"
+
+      - name: Build the Windows executable
+        id: build
+        shell: pwsh
+        env:
+          # The version goes into the binary through the build script — no
+          # source file is edited.
+          EV_AP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cargo build --release --locked
+          $verDash = "${{ steps.version.outputs.version }}".Replace('.', '-').TrimStart('v-')
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $artifact = "Attendance_App_$verDash.exe"
+          Copy-Item "target/release/Attendance_App.exe" "dist/$artifact"
+          Compress-Archive -Path "dist/$artifact" -DestinationPath "dist/Attendance_App_$verDash.zip" -Force
+          Write-Output "Built dist/Attendance_App_$verDash.zip"
+
+      - name: Tag
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1.14.0
+        with:
+          tag: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          body: ${{ env.RELEASE_NOTES }}
+          artifacts: "dist/Attendance_App_*.zip"
+          token: ${{ secrets.GITHUB_TOKEN }}
