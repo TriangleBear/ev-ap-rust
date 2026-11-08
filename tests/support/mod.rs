@@ -12,6 +12,8 @@
 
 #![allow(dead_code)]
 
+pub mod apps_script;
+
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -110,25 +112,47 @@ impl FakeAppsScript {
         routes: HashMap<String, CannedResponse>,
         default_response: Option<CannedResponse>,
     ) -> Self {
+        let handler = move |request: &RecordedRequest| {
+            let action = request.action();
+            let response = routes.get(&action).cloned().unwrap_or_else(|| {
+                default_response.clone().unwrap_or_else(|| {
+                    // The real Apps Script answers an unknown action with
+                    // HTTP 200 and a JSON body carrying `success: false`.
+                    CannedResponse::json(
+                        200,
+                        format!("{{\"success\": false, \"error\": \"Unknown action: {action}\"}}"),
+                    )
+                })
+            });
+            (response.status, response.body)
+        };
+        FakeAppsScript::start_with_handler(handler)
+    }
+
+    /// Start a server whose answers come from a handler.
+    ///
+    /// The handler sees every request and returns the status code and the
+    /// body. This is what the stateful fake in `apps_script.rs` uses.
+    pub fn start_with_handler(
+        handler: impl Fn(&RecordedRequest) -> (u16, String) + Send + Sync + 'static,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
         let url = format!("http://{}/exec", listener.local_addr().unwrap());
         listener.set_nonblocking(true).expect("set nonblocking");
 
         let requests = Arc::new(Mutex::new(Vec::new()));
         let shutdown = Arc::new(AtomicBool::new(false));
+        let handler = Arc::new(handler);
 
         let thread_requests = Arc::clone(&requests);
         let thread_shutdown = Arc::clone(&shutdown);
+        let thread_handler = Arc::clone(&handler);
         let handle = std::thread::spawn(move || {
             while !thread_shutdown.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((stream, _)) => {
-                        let _ = handle_connection(
-                            stream,
-                            &routes,
-                            default_response.as_ref(),
-                            &thread_requests,
-                        );
+                        let _ =
+                            handle_connection(stream, thread_handler.as_ref(), &thread_requests);
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -176,8 +200,7 @@ impl Drop for FakeAppsScript {
 
 fn handle_connection(
     mut stream: TcpStream,
-    routes: &HashMap<String, CannedResponse>,
-    default_response: Option<&CannedResponse>,
+    handler: &(dyn Fn(&RecordedRequest) -> (u16, String) + Send + Sync),
     requests: &Arc<Mutex<Vec<RecordedRequest>>>,
 ) -> std::io::Result<()> {
     // The listener is non-blocking so the accept loop can be shut down; the
@@ -230,21 +253,16 @@ fn handle_connection(
         body,
     };
 
-    let action = recorded.action();
     if let Ok(mut log) = requests.lock() {
-        log.push(recorded);
+        log.push(recorded.clone());
     }
 
-    let response = routes.get(&action).cloned().unwrap_or_else(|| {
-        default_response.cloned().unwrap_or_else(|| {
-            // The real Apps Script answers an unknown action with HTTP 200 and
-            // a JSON body carrying `success: false`.
-            CannedResponse::json(
-                200,
-                format!("{{\"success\": false, \"error\": \"Unknown action: {action}\"}}"),
-            )
-        })
-    });
+    let (status, body) = handler(&recorded);
+    let response = CannedResponse {
+        status,
+        body,
+        content_type: "application/json".to_string(),
+    };
 
     let reason = reason_phrase(response.status);
     let head = format!(
