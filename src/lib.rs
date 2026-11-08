@@ -12,6 +12,7 @@ pub mod config;
 pub mod db;
 pub mod managers;
 pub mod theme;
+pub mod ui;
 pub mod views;
 
 /// Version of the application, injected at build time.
