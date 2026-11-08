@@ -85,18 +85,30 @@ impl ThemePreference {
     }
 
     /// The background colour of a disabled control.
-    pub fn disabled_bg_color(self) -> Color32 {
+    ///
+    /// In system mode the colour follows the theme that is actually in use —
+    /// the Python app always used the light grey there, which looked wrong in
+    /// a dark theme.
+    pub fn disabled_bg_color(self, ctx: &egui::Context) -> Color32 {
         match self {
             ThemePreference::Dark => Color32::from_rgb(0x1a, 0x1a, 0x1a),
-            _ => Color32::from_rgb(0xf0, 0xf0, 0xf0),
+            ThemePreference::Light => Color32::from_rgb(0xf0, 0xf0, 0xf0),
+            ThemePreference::System => match ctx.system_theme() {
+                Some(egui::Theme::Dark) => Color32::from_rgb(0x1a, 0x1a, 0x1a),
+                _ => Color32::from_rgb(0xf0, 0xf0, 0xf0),
+            },
         }
     }
 
     /// The text colour of a disabled control.
-    pub fn disabled_text_color(self) -> Color32 {
+    pub fn disabled_text_color(self, ctx: &egui::Context) -> Color32 {
         match self {
             ThemePreference::Dark => Color32::from_rgb(0xaa, 0xaa, 0xaa),
-            _ => Color32::from_rgb(0x66, 0x66, 0x66),
+            ThemePreference::Light => Color32::from_rgb(0x66, 0x66, 0x66),
+            ThemePreference::System => match ctx.system_theme() {
+                Some(egui::Theme::Dark) => Color32::from_rgb(0xaa, 0xaa, 0xaa),
+                _ => Color32::from_rgb(0x66, 0x66, 0x66),
+            },
         }
     }
 }
@@ -128,19 +140,19 @@ mod tests {
     #[test]
     fn the_disabled_colours_match_the_python_theme_manager() {
         assert_eq!(
-            ThemePreference::Light.disabled_bg_color(),
+            ThemePreference::Light.disabled_bg_color(&egui::Context::default()),
             Color32::from_rgb(0xf0, 0xf0, 0xf0)
         );
         assert_eq!(
-            ThemePreference::Dark.disabled_bg_color(),
+            ThemePreference::Dark.disabled_bg_color(&egui::Context::default()),
             Color32::from_rgb(0x1a, 0x1a, 0x1a)
         );
         assert_eq!(
-            ThemePreference::Light.disabled_text_color(),
+            ThemePreference::Light.disabled_text_color(&egui::Context::default()),
             Color32::from_rgb(0x66, 0x66, 0x66)
         );
         assert_eq!(
-            ThemePreference::Dark.disabled_text_color(),
+            ThemePreference::Dark.disabled_text_color(&egui::Context::default()),
             Color32::from_rgb(0xaa, 0xaa, 0xaa)
         );
     }

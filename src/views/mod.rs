@@ -17,6 +17,7 @@ pub mod settings;
 use crate::db::Database;
 use crate::managers::{EventManager, MemberManager, TableManager};
 use crate::theme::ThemePreference;
+use crate::ui::attendance_window::AttendanceWindow;
 use crate::ui::message_box::{MessageBox, MessageBoxResponse};
 
 use self::about::AboutView;
@@ -83,12 +84,34 @@ pub struct ViewContext<'a> {
     pub dialog: &'a mut Option<MessageBox>,
     /// The answer to the message box that was closed in the previous frame.
     pub response: Option<MessageBoxResponse>,
+    /// The attendance window. A view may open one.
+    pub attendance: &'a mut Option<AttendanceWindow>,
+    /// The view the user asked to go to, if any.
+    pub request_view: Option<View>,
+    /// The preloaded data has to be reloaded.
+    pub refresh: bool,
 }
 
 impl ViewContext<'_> {
     /// Show a message box with a single "OK" button.
     pub fn show_message(&mut self, title: impl Into<String>, message: impl Into<String>) {
         *self.dialog = Some(MessageBox::info(title, message));
+    }
+
+    /// Show a message box with a "Yes" and a "No" button.
+    pub fn ask_confirmation(
+        &mut self,
+        title: impl Into<String>,
+        message: impl Into<String>,
+        yes_label: &str,
+        no_label: &str,
+    ) {
+        *self.dialog = Some(MessageBox::confirm(title, message, yes_label, no_label));
+    }
+
+    /// Ask for the preloaded data to be reloaded.
+    pub fn request_refresh(&mut self) {
+        self.refresh = true;
     }
 }
 

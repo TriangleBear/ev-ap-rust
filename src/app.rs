@@ -15,6 +15,7 @@ use crate::config::DbMode;
 use crate::db::{Backend, Database, Row};
 use crate::managers::{EventManager, MemberManager, TableManager};
 use crate::theme::ThemePreference;
+use crate::ui::attendance_window::AttendanceWindow;
 use crate::ui::message_box::{MessageBox, MessageBoxResponse};
 use crate::views::{View, ViewContext, ViewSet};
 
@@ -158,6 +159,7 @@ pub struct AppShell {
     current: View,
     dialog: Option<MessageBox>,
     pending_response: Option<MessageBoxResponse>,
+    attendance: Option<AttendanceWindow>,
     initializer: DatabaseInitializer,
 }
 
@@ -179,6 +181,7 @@ impl AppShell {
             current: View::Home,
             dialog: None,
             pending_response: None,
+            attendance: None,
             initializer,
         }
     }
@@ -280,18 +283,15 @@ impl AppShell {
             self.nav_button(ui, view);
         }
 
-        // The database status label.
-        //
-        // The Python app pins it to the bottom of the sidebar with
-        // `pack(side="bottom")`. egui does not offer a "bottom of the panel"
-        // layout that survives the panel's own layout, so the label sits
-        // directly under the navigation here.
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(self.status_text())
-                .color(self.theme.sub_text_color(ctx))
-                .strong(),
-        );
+        // The database status label sits at the bottom of the sidebar, like in
+        // the Python app (`pack(side="bottom")`).
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+            ui.label(
+                egui::RichText::new(self.status_text())
+                    .color(self.theme.sub_text_color(ctx))
+                    .strong(),
+            );
+        });
     }
 
     fn nav_button(&mut self, ui: &mut egui::Ui, view: View) {
@@ -340,6 +340,7 @@ impl AppShell {
             current,
             dialog,
             pending_response,
+            attendance,
             ..
         } = self;
 
@@ -351,11 +352,21 @@ impl AppShell {
             theme: *theme,
             dialog,
             response: pending_response.take(),
+            attendance,
+            request_view: None,
+            refresh: false,
         };
 
         views.get_mut(*current).ui(ui, &mut context);
 
         *theme = context.theme;
+
+        if let Some(view) = context.request_view {
+            self.current = view;
+        }
+        if context.refresh {
+            self.reload_preloaded_data();
+        }
     }
 
     fn render_dialog(&mut self, ctx: &egui::Context) {
@@ -391,5 +402,14 @@ impl eframe::App for AppShell {
 
         self.render_dialog(ctx);
         self.collect_dialog_response();
+
+        // The attendance window floats above the content.
+        let mut message = None;
+        if let Some(attendance) = self.attendance.as_mut() {
+            message = attendance.show(ctx, &self.tables);
+        }
+        if let Some((title, text)) = message {
+            self.show_message(title, text);
+        }
     }
 }
