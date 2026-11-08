@@ -1,88 +1,119 @@
 # Ev_Ap (Rust)
 
-**Ev_Ap** is a desktop application for event attendance automation. Members are
-registered against an RFID tag; at an event, scanning the tag records
-attendance and awards points.
+**Ev_Ap (Event Attendance)** is a desktop application for managing event
+attendance via RFID scanning. It supports a **dual-backend** architecture —
+local **SQLite** or cloud **Google Sheets** through a Google Apps Script Web
+App.
 
-This repository is the **Rust rewrite** of the original Python/CustomTkinter
-application that lives in
-[`TriangleBear/Ev_Ap`](https://github.com/TriangleBear/Ev_Ap). The Python repo
-is kept as the read-only reference for parity work.
+This is the **Rust rewrite** of the original Python/CustomTkinter application
+([`TriangleBear/Ev_Ap`](https://github.com/TriangleBear/Ev_Ap)), which is kept
+as the read-only reference. The migration is documented in
+[`docs/RUST_MIGRATION.md`](docs/RUST_MIGRATION.md) and the result of the
+parity check in [`docs/PARITY_CHECKLIST.md`](docs/PARITY_CHECKLIST.md).
 
-## Status
+## Features
 
-| Phase | Scope | Issue |
-|---|---|---|
-| 0 | Repo & scaffold | [#1](https://github.com/TriangleBear/ev-ap-rust/issues/1) |
-| 1 | Data layer (SQLite) | [#2](https://github.com/TriangleBear/ev-ap-rust/issues/2) |
-| 2 | Sheets backend | [#3](https://github.com/TriangleBear/ev-ap-rust/issues/3) |
-| 3 | Managers | [#4](https://github.com/TriangleBear/ev-ap-rust/issues/4) |
-| 4 | UI shell + theme | [#5](https://github.com/TriangleBear/ev-ap-rust/issues/5) |
-| 5 | All 7 views | [#6](https://github.com/TriangleBear/ev-ap-rust/issues/6) |
-| 6 | Scan flow | [#7](https://github.com/TriangleBear/ev-ap-rust/issues/7) |
-| 7 | Parity QA | [#8](https://github.com/TriangleBear/ev-ap-rust/issues/8) |
-| 8 | Packaging & release CI | [#9](https://github.com/TriangleBear/ev-ap-rust/issues/9) |
-| 9 | Cutover | [#10](https://github.com/TriangleBear/ev-ap-rust/issues/10) |
+- **Member registration** — RFID, member id, name, student number, program
+  and year.
+- **Event management** — each event gets its own Google Sheet file (Sheets
+  mode) or its own SQLite table (local mode).
+- **Attendance tracking** — scan RFID cards to mark attendance, with the
+  15 second de-duplication window.
+- **Background scanning** — the scan runs on a worker thread, so the window
+  stays responsive and shows a spinner.
+- **Points** — award and redeem points.
+- **Dual database backend** — switch between SQLite and Google Sheets in
+  Settings, without a restart.
+- **Data export** — attendance to CSV or Excel.
+- **Light / Dark / System** appearance mode.
 
-The full plan lives in [`docs/RUST_MIGRATION.md`](docs/RUST_MIGRATION.md).
+## Requirements
 
-## Stack
+- Windows (the release artifact is a Windows executable)
+- A Google account — only for the Google Sheets backend
 
-| Concern | Crate |
-|---|---|
-| UI | `eframe` / `egui` / `egui_extras` |
-| SQLite | `rusqlite` (`bundled`) |
-| Sheets | `reqwest` (blocking) + `serde` / `serde_json` |
-| Export | `csv` + `rust_xlsxwriter` |
-| Save dialogs | `rfd` |
-| Config | `serde_json` |
-| Background work | `std::thread` + `mpsc` |
-| Logging | `tracing` + `tracing_subscriber` |
+## Installation
 
-## Building
+Download the latest `Attendance_App_<version>.zip` from the
+[releases](https://github.com/TriangleBear/ev-ap-rust/releases), unpack it and
+run `Attendance_App.exe`. **No Python and no runtime dependencies are
+needed.**
+
+To build it yourself:
 
 ```bash
-cargo build            # debug
-cargo build --release  # optimised binary at target/release/Attendance_App.exe
-cargo test             # unit + integration tests
-cargo fmt --all        # format
-cargo clippy --all-targets -- -D warnings
+git clone https://github.com/TriangleBear/ev-ap-rust.git
+cd ev-ap-rust
+cargo build --release
+.\target\release\Attendance_App.exe
 ```
 
-The released artifact is named `Attendance_App_<version>` to stay continuous
-with the Python releases.
+Rust 1.85 or newer is needed; the stable toolchain is enough.
 
-## Layout
+## Usage
+
+### Local mode (SQLite — the default)
+
+Works out of the box. Everything is stored in `Ev_Ap.db` in the working
+directory, and the settings in `ev_ap_config.json`.
+
+### Google Sheets mode
+
+1. Open the Google Sheet you want to use → **Extensions → Apps Script** →
+   paste `apps-script/gsheet_api.gs`.
+2. Run the **Ev_Ap → Configure Spreadsheet** menu item to set your sheet.
+3. Deploy → **New deployment** → **Web App** (Execute as: Me, Access: Anyone).
+4. In Ev_Ap: **Settings → Database Mode → Google Sheets**, paste the
+   deployment URL, press **Save API URL** and then **Apply & Restart
+   Connection**.
+
+The main spreadsheet holds the `Members` sheet and the `Events` registry.
+**Each event gets its own spreadsheet file** with an `Attendance` sheet.
+
+### Scanning
+
+Open an event, type the tag into the **Scan RFID Card** field and press
+**Enter** — a keyboard-wedge scanner does that for you. The same tag is
+ignored for 15 seconds, so a double scan cannot record the attendance twice.
+
+## Development
+
+```bash
+cargo test              # 144 tests
+cargo fmt --all         # format
+cargo clippy --all-targets --all-features -- -D warnings
+cargo run               # start the app
+```
+
+The crate is split into a library (`ev_ap`) and a thin binary
+(`Attendance_App`), so every layer can be tested without a window:
 
 ```
 src/
 ├── main.rs              # binary entry point
-├── lib.rs               # library root (testable core)
+├── lib.rs               # library root
 ├── app.rs               # shell: sidebar nav, view routing, theme state
 ├── config.rs            # ev_ap_config.json
 ├── db/
-│   ├── mod.rs           # Backend enum (Sqlite | Sheets) — mirrors DBActions routing
+│   ├── mod.rs           # Backend trait + the router that dispatches per db_mode
 │   ├── sqlite.rs        # local SQLite backend
 │   └── sheets.rs        # Google Sheets (Apps Script) backend
-├── managers/            # event, member (15s dedup cache), table (scan/export)
+├── managers/            # event, member (15s cache), table (scan/export)
+├── ui/                  # message box, form modal, table, attendance window
 ├── views/               # home, events, members, reports, settings, help, about
-└── theme.rs
+├── theme.rs             # light / dark / system
+└── version.rs           # the release version rules
 tests/                   # integration tests
-docs/RUST_MIGRATION.md   # the migration plan
-apps-script/             # Google Apps Script source for the Sheets backend
+docs/                    # the migration plan and the parity checklist
+apps-script/             # the Google Apps Script of the Sheets backend
 ```
 
-## Database backends
+## Contributing
 
-The app supports two interchangeable backends, selected in **Settings →
-Database**:
-
-- **SQLite** (default) — a local `Ev_Ap.db` file in the working directory.
-- **Google Sheets** — the `Members` sheet and the `Events` registry in a main
-  spreadsheet, plus one spreadsheet per event.
-
-Both backends are reached through the same façade, mirroring the Python
-`DBActions` router, so the UI never needs to know which one is active.
+Issues and pull requests are welcome — see
+[`CONTRIBUTE.md`](../Ev_Ap/CONTRIBUTE.md) in the Python repository for the
+house rules, and the phase issues in this repository for what is being
+worked on.
 
 ## License
 

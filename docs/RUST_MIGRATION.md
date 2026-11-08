@@ -1,9 +1,11 @@
 # Ev_Ap → Rust Migration Plan
 
-**Status:** In progress — this document now lives in the Rust repo (`docs/RUST_MIGRATION.md`).
+**Status:** Complete — every phase below was delivered as its own pull request.
 **Decisions (locked):** egui/eframe UI · Full feature parity · Separate new repo · This doc moved to the new repo's `docs/` in Phase 0.
 
-> **Tracking:** Each phase below is tracked as a GitHub issue in this repo — issues [#1](https://github.com/TriangleBear/ev-ap-rust/issues/1)–[#10](https://github.com/TriangleBear/ev-ap-rust/issues/10), one per phase, with the phase bullets as a checklist. Each phase is delivered as its own PR with a test case per checklist item.
+> **Tracking:** Each phase below was tracked as a GitHub issue in this repo — issues [#1](https://github.com/TriangleBear/ev-ap-rust/issues/1)–[#10](https://github.com/TriangleBear/ev-ap-rust/issues/10), one per phase, with the phase bullets as a checklist. Every phase was delivered as its own pull request with a test case per checklist item: PRs [#11](https://github.com/TriangleBear/ev-ap-rust/pull/11) – [#20](https://github.com/TriangleBear/ev-ap-rust/pull/20).
+>
+> The result of the parity check is in [`PARITY_CHECKLIST.md`](PARITY_CHECKLIST.md).
 
 ---
 
