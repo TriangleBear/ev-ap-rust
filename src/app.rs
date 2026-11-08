@@ -400,9 +400,6 @@ impl eframe::App for AppShell {
 
         egui::CentralPanel::default().show(ctx, |ui| self.content(ui));
 
-        self.render_dialog(ctx);
-        self.collect_dialog_response();
-
         // The attendance window floats above the content.
         let mut message = None;
         if let Some(attendance) = self.attendance.as_mut() {
@@ -411,5 +408,9 @@ impl eframe::App for AppShell {
         if let Some((title, text)) = message {
             self.show_message(title, text);
         }
+
+        // The message box is drawn last, so it is on top of everything.
+        self.render_dialog(ctx);
+        self.collect_dialog_response();
     }
 }

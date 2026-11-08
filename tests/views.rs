@@ -132,7 +132,7 @@ fn a_form_that_is_not_interacted_with_stays_idle() {
     let mut outcome = FormOutcome::Idle;
 
     // egui only allows drawing inside `Context::run`.
-    ctx.run(egui::RawInput::default(), |ctx| {
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
         outcome = form.show(ctx);
     });
 

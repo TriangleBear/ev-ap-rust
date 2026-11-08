@@ -117,6 +117,31 @@ impl TableManager {
         self.db.fetch_table_data(table_name)
     }
 
+    /// Record an attendance on a worker thread.
+    ///
+    /// The Python app runs the scan in a `threading.Thread` so the window
+    /// stays responsive while the Google Sheets backend is contacted. The
+    /// result is delivered through the returned channel.
+    pub fn spawn_scan(
+        &self,
+        table_name: &str,
+        rfid: &str,
+    ) -> std::sync::mpsc::Receiver<ScanResult> {
+        let (sender, receiver) = std::sync::mpsc::channel();
+
+        let db = self.db.clone();
+        let cache = Arc::clone(&self.rfid_cache);
+        let table = table_name.to_string();
+        let rfid = rfid.to_string();
+
+        std::thread::spawn(move || {
+            let manager = TableManager::with_cache(db, cache);
+            let _ = sender.send(manager.scan(&table, &rfid));
+        });
+
+        receiver
+    }
+
     /// Filter the rows by a search term.
     ///
     /// Mirrors the Python `search_table` handler, which matches the term

@@ -45,9 +45,8 @@ impl AppView for HomeView {
 
         // The dashboard is a two by two grid of cards.
         let egui_ctx = ui.ctx().clone();
-        ui.columns(2, |columns| {
-            // ── Event Attendance ───────────────────────────────────
-            columns[0].vertical(|ui| {
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
                 ui.heading("Event Attendance");
                 ui.label("Scan RFID cards for event attendance");
                 ui.add_space(8.0);
@@ -90,7 +89,7 @@ impl AppView for HomeView {
             });
 
             // ── Register Member ────────────────────────────────────
-            columns[1].vertical(|ui| {
+            ui.vertical(|ui| {
                 ui.heading("Register Member");
                 ui.label("Add new members to the database");
                 ui.add_space(8.0);
@@ -110,9 +109,9 @@ impl AppView for HomeView {
             });
         });
 
-        ui.columns(2, |columns| {
+        ui.horizontal(|ui| {
             // ── Create Event ───────────────────────────────────────
-            columns[0].vertical(|ui| {
+            ui.vertical(|ui| {
                 ui.heading("Create Event");
                 ui.label("Set up a new event for attendance tracking");
                 ui.add_space(8.0);
@@ -130,7 +129,7 @@ impl AppView for HomeView {
             // ── Redeem Points (disabled) ───────────────────────────
             let disabled_bg = ctx.theme.disabled_bg_color(&egui_ctx);
             let disabled_text = ctx.theme.disabled_text_color(&egui_ctx);
-            columns[1].vertical(|ui| {
+            ui.vertical(|ui| {
                 egui::Frame::new()
                     .fill(disabled_bg)
                     .inner_margin(12.0)
