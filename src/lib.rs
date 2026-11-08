@@ -13,13 +13,16 @@ pub mod db;
 pub mod managers;
 pub mod theme;
 pub mod ui;
+pub mod version;
 pub mod views;
 
 /// Version of the application, injected at build time.
 ///
 /// Replaces the CI workflow that used to rewrite a hardcoded version string
-/// inside `about_view.py`.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// inside `about_view.py`. The release workflow passes the version in the
+/// `EV_AP_VERSION` environment variable; a local build falls back to the
+/// version of `Cargo.toml`.
+pub const VERSION: &str = env!("EV_AP_VERSION");
 
 /// Name of the released binary artifact.
 pub const APP_NAME: &str = "Attendance_App";

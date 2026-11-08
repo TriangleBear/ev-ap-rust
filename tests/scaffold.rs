@@ -2,7 +2,9 @@ use ev_ap::{APP_NAME, VERSION};
 
 #[test]
 fn version_is_injected_at_build_time() {
-    assert_eq!(VERSION, env!("CARGO_PKG_VERSION"));
+    // The release workflow passes the version in `EV_AP_VERSION`; a local
+    // build falls back to the version of `Cargo.toml`.
+    assert_eq!(VERSION, env!("EV_AP_VERSION"));
     assert!(!VERSION.is_empty());
 }
 
